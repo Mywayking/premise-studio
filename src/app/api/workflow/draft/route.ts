@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { MOONSHOT_API_KEY } from '@/lib/env';
+import { DEEPSEEK_API_KEY } from '@/lib/env';
 
-const MINIMAX_STREAMING_MODEL = 'MiniMax-M2.7';
+const DEEPSEEK_MODEL = 'deepseek-v4-pro';
 
 interface DraftRequest {
   angle: string;
@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const apiKey = MOONSHOT_API_KEY || process.env.MOONSHOT_API_KEY;
+    const apiKey = DEEPSEEK_API_KEY || process.env.DEEPSEEK_API_KEY;
     const prompt = buildDraftPrompt(angle, premise, action, context);
 
     // Streaming response using ReadableStream
@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
       async start(controller) {
         try {
           const response = await fetch(
-            'https://api.moonshot.cn/v1/chat/completions',
+            'https://api.deepseek.com/v1/chat/completions',
             {
               method: 'POST',
               headers: {
@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
                 Authorization: `Bearer ${apiKey}`,
               },
               body: JSON.stringify({
-                model: MINIMAX_STREAMING_MODEL,
+                model: DEEPSEEK_MODEL,
                 messages: [
                   {
                     role: 'system',
@@ -130,26 +130,25 @@ export async function POST(req: NextRequest) {
             for (const line of lines) {
               if (line.startsWith('data: ')) {
                 const data = line.slice(6);
-                if (data === '[DONE]') {
-                  controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-                } else {
-                  try {
-                    const parsed = JSON.parse(data);
-                    const content = parsed.choices?.[0]?.delta?.content;
-                    if (content) {
-                      controller.enqueue(
-                        encoder.encode(`data: ${JSON.stringify({ content })}\n\n`)
-                      );
-                    }
-                  } catch {
-                    // Skip malformed JSON
+                if (data === '[DONE]') continue;
+                try {
+                  const parsed = JSON.parse(data);
+                  const content = parsed.choices?.[0]?.delta?.content || parsed.choices?.[0]?.delta?.reasoning_content || "";
+                  if (content) {
+                    controller.enqueue(
+                      encoder.encode(`data: ${JSON.stringify({ content })}\n\n`)
+                    );
                   }
+                } catch {
+                  // Skip malformed JSON
                 }
               }
             }
           }
 
-          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+          try {
+            controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+          } catch {}
           controller.close();
         } catch (error) {
           console.error('Streaming error:', error);

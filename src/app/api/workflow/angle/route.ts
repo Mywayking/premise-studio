@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { MOONSHOT_API_KEY } from '@/lib/env';
+import { DEEPSEEK_API_KEY } from '@/lib/env';
 
-const DEEPSEEK_QUICK_MODEL = 'deepseek/deepseek-v4-pro';
+const DEEPSEEK_MODEL = 'deepseek-v4-pro';
 
 interface AngleRequest {
   premise: string;
@@ -37,16 +37,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '前提不能为空' }, { status: 400 });
     }
 
-    const apiKey = MOONSHOT_API_KEY || process.env.MOONSHOT_API_KEY;
+    const apiKey = DEEPSEEK_API_KEY || process.env.DEEPSEEK_API_KEY;
 
-    const response = await fetch('https://api.moonshot.cn/v1/chat/completions', {
+    const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: DEEPSEEK_QUICK_MODEL,
+        model: DEEPSEEK_MODEL,
         messages: [
           {
             role: 'system',
