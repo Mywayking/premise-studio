@@ -1,189 +1,73 @@
 'use client';
-
-import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Card, CardType } from '@/types';
 import { useCardTreeStore } from '@/store/cardTreeStore';
+import { useSessionStore } from '@/store/sessionStore';
+import { useStreamingStore } from '@/store/streamingStore';
+import { useStreaming } from '@/hooks/useStreaming';
 
-interface ActionPanelProps {
-  card: Card | null;
-  onAction: (cardId: string, action: string, params?: Record<string, string>) => void;
-}
-
-const ACTION_CONFIGS: Record<string, { icon: string; description: string }> = {
-  '提炼前提': { icon: '💡', description: '从素材中提炼喜剧前提' },
-  '提取情绪': { icon: '🎭', description: '提取素材中的情绪元素' },
-  '提取冲突': { icon: '⚔️', description: '提取素材中的核心冲突' },
-  '找角度': { icon: '🎯', description: '为前提找到独特的喜剧角度' },
-  '加强攻击性': { icon: '🔥', description: '增强段子的攻击性和张力' },
-  '更荒诞': { icon: '🌙', description: '让段子更荒诞有趣' },
-  '更真实': { icon: '💯', description: '让段子更接地气真实' },
-  '生成草稿': { icon: '✍️', description: '基于角度生成段子草稿' },
-  '增加细节': { icon: '🔍', description: '为草稿增加真实细节' },
-  '增强情绪': { icon: '💥', description: '增强段子的情绪感染力' },
-  '改稿': { icon: '🔧', description: '全面改稿优化' },
-  '缩短': { icon: '✂️', description: '精简段子去掉冗余' },
-  'callback': { icon: '🔄', description: '增加回扣呼应前文' },
-  '更口语化': { icon: '🗣️', description: '让表达更自然口语' },
-  '再改稿': { icon: '🔁', description: '继续优化改稿' },
-  '比较版本': { icon: '📊', description: '对比新旧版本' },
-  '分支创作': { icon: '🌿', description: '从当前版本分支创作' },
+const ACTIONS: Record<string, { key: string; label: string; primary?: boolean }[]> = {
+  material: [
+    { key: 'extract-premises', label: '提炼前提', primary: true },
+    { key: 'extract-emotions', label: '提取情绪' },
+    { key: 'extract-conflicts', label: '提取冲突' },
+    { key: 'extract-characters', label: '提取人物' },
+  ],
+  premise: [
+    { key: 'find-angles', label: '找角度', primary: true },
+    { key: 'sharpen', label: '加强攻击性' }, { key: 'absurdify', label: '更荒诞' },
+    { key: 'ground', label: '更真实' }, { key: 'deconstruct', label: '拆解前提' },
+  ],
+  angle: [
+    { key: 'generate-draft', label: '生成草稿', primary: true },
+    { key: 'add-detail', label: '增加细节' }, { key: 'amplify-emotion', label: '增强情绪' },
+    { key: 'restructure', label: '换结构' }, { key: 'reverse', label: '反向角度' },
+  ],
+  draft: [
+    { key: 'rewrite', label: '改稿', primary: true },
+    { key: 'shorten', label: '缩短' }, { key: 'callback', label: 'Callback' },
+    { key: 'colloquial', label: '更口语化' }, { key: 'enhance-punch', label: '增强 Punch' },
+    { key: 'generate-tag', label: '生成 Tag' }, { key: 'topper', label: '翻 Topper' },
+  ],
+  rewrite: [
+    { key: 're-rewrite', label: '再改稿', primary: true },
+    { key: 'branch', label: '分支创作' }, { key: 'performance-script', label: '演出稿' },
+    { key: 'compare', label: '比较版本' },
+  ],
 };
 
-interface VersionHistoryProps {
-  card: Card;
-  onCompare: (cardId: string) => void;
-}
+export function ActionPanel() {
+  const currentNode = useCardTreeStore((s) => s.getCurrentNode());
+  const session = useSessionStore((s) => s.getCurrentSession());
+  const streamingState = useStreamingStore((s) => s.state);
+  const { triggerAction, cancel } = useStreaming();
 
-function VersionHistory({ card, onCompare }: VersionHistoryProps) {
-  if (!card.children.length) return null;
+  if (!currentNode) return <p className="text-sm text-ink-muted py-4">在左侧点击一个 card 查看可用的 AI Action</p>;
 
-  return (
-    <div className="mt-4">
-      <h4 className="text-xs font-medium text-gray-500 uppercase mb-2">
-        历史版本
-      </h4>
-      <div className="space-y-2">
-        {card.children.map((child, index) => (
-          <motion.div
-            key={child.id}
-            initial={{ opacity: 0, x: 10 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: index * 0.05 }}
-            className="p-2 bg-gray-50 rounded-lg text-sm"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-gray-600">
-                v{index + 1} · {child.title}
-              </span>
-              <button
-                onClick={() => onCompare(child.id)}
-                className="text-xs text-blue-500 hover:underline"
-              >
-                对比
-              </button>
-            </div>
-            <p className="text-gray-500 text-xs mt-1 truncate">
-              {child.content.slice(0, 50)}...
-            </p>
-          </motion.div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-export function ActionPanel({ card, onAction }: ActionPanelProps) {
-  const [showVersions, setShowVersions] = useState(false);
-  const { getCardActions, getCardTypeLabel } = useCardTreeStore();
-
-  if (!card) {
-    return (
-      <div className="h-full flex items-center justify-center text-gray-400 p-4">
-        <div className="text-center text-sm">
-          <div className="text-3xl mb-2">⚡</div>
-          <p>选择一个卡片</p>
-          <p className="mt-1">查看可用操作</p>
-        </div>
-      </div>
-    );
-  }
-
-  const actions = getCardActions(card.type);
+  const actions = ACTIONS[currentNode.type] || [];
+  const isStreaming = streamingState === 'streaming';
+  const hasLineAnnotations = (currentNode.type === 'draft' || currentNode.type === 'rewrite') && currentNode.lineAnnotations && Object.keys(currentNode.lineAnnotations).length > 0;
 
   return (
-    <div className="h-full overflow-y-auto p-4">
-      {/* Card Info */}
-      <div className="mb-4">
-        <span
-          className={`
-            inline-block px-2 py-1 rounded text-xs font-medium
-            ${card.type === 'material' ? 'bg-amber-100 text-amber-700' : ''}
-            ${card.type === 'premise' ? 'bg-blue-100 text-blue-700' : ''}
-            ${card.type === 'angle' ? 'bg-purple-100 text-purple-700' : ''}
-            ${card.type === 'draft' ? 'bg-green-100 text-green-700' : ''}
-            ${card.type === 'rewrite' ? 'bg-rose-100 text-rose-700' : ''}
-          `}
-        >
-          {getCardTypeLabel(card.type)}
-        </span>
-      </div>
-
-      {/* Quick Stats */}
-      <div className="grid grid-cols-2 gap-2 mb-6">
-        <div className="p-3 bg-gray-50 rounded-lg">
-          <div className="text-2xl font-medium text-gray-800">
-            {card.content.length}
-          </div>
-          <div className="text-xs text-gray-500">字符数</div>
+    <div className="space-y-2">
+      <div className="text-xs text-ink-muted mb-3">当前: {currentNode.type === 'material' ? '素材' : currentNode.type === 'premise' ? '前提' : currentNode.type === 'angle' ? '角度' : currentNode.type === 'draft' ? '草稿' : '改稿'}</div>
+      {actions.map((action) => {
+        const needsLine = action.key === 'generate-tag' || action.key === 'topper';
+        const disabled = isStreaming || (needsLine && !hasLineAnnotations);
+        return (
+          <button key={action.key} onClick={() => { const s = useSessionStore.getState().getCurrentSession(); if (s && !disabled) triggerAction(action.key, s.id); }}
+            disabled={disabled}
+            className={`w-full text-left px-4 py-2.5 rounded-lg text-sm transition-colors ${action.primary ? 'bg-accent text-white hover:opacity-90 font-medium' : 'bg-white border border-paper-dark text-ink-secondary hover:bg-hover-bg'} disabled:opacity-40 disabled:cursor-not-allowed`}
+            title={needsLine && !hasLineAnnotations ? '需要先在编辑器中标记行类型' : undefined}>
+            {action.label}
+            {needsLine && !hasLineAnnotations && <div className="text-[10px] opacity-60 mt-0.5">需要行标注</div>}
+          </button>
+        );
+      })}
+      {isStreaming && (
+        <div className="mt-4 space-y-2">
+          <div className="p-3 bg-paper-dark rounded-lg text-xs text-ink-muted text-center">AI 正在生成中...</div>
+          <button onClick={cancel} className="w-full py-2 text-sm text-error-text border border-error-text/30 rounded-lg hover:bg-error-bg transition-colors">取消</button>
         </div>
-        <div className="p-3 bg-gray-50 rounded-lg">
-          <div className="text-2xl font-medium text-gray-800">
-            {card.children.length}
-          </div>
-          <div className="text-xs text-gray-500">子节点</div>
-        </div>
-      </div>
-
-      {/* Actions */}
-      <div className="mb-6">
-        <h3 className="text-xs font-medium text-gray-500 uppercase mb-3">
-          可用操作
-        </h3>
-        <div className="space-y-2">
-          <AnimatePresence>
-            {actions.map((action, index) => {
-              const config = ACTION_CONFIGS[action] || {
-                icon: '➡️',
-                description: action,
-              };
-              return (
-                <motion.button
-                  key={action}
-                  initial={{ opacity: 0, y: 5 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.03 }}
-                  onClick={() => onAction(card.id, action)}
-                  className="w-full p-3 bg-white border border-gray-200 rounded-lg hover:border-gray-300 hover:bg-gray-50 transition-colors text-left group"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">{config.icon}</span>
-                    <span className="font-medium text-gray-800">{action}</span>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-1">
-                    {config.description}
-                  </p>
-                </motion.button>
-              );
-            })}
-          </AnimatePresence>
-        </div>
-      </div>
-
-      {/* Version History for drafts/rewrites */}
-      {(card.type === 'draft' || card.type === 'rewrite') && (
-        <VersionHistory
-          card={card}
-          onCompare={(id) => console.log('Compare', id)}
-        />
       )}
-
-      {/* Tips */}
-      <div className="mt-6 p-3 bg-yellow-50 rounded-lg border border-yellow-100">
-        <h4 className="text-xs font-medium text-yellow-800 mb-1">💡 创作提示</h4>
-        <p className="text-xs text-yellow-700">
-          {card.type === 'material' &&
-            '好的素材来源于真实的生活观察。试着回忆具体的场景、人物和对话。'}
-          {card.type === 'premise' &&
-            '前提是段子的核心冲突。一个好的前提应该有一个清晰的目标和障碍。'}
-          {card.type === 'angle' &&
-            '角度决定了你怎么看这个前提。试着从不同身份、不同立场思考。'}
-          {card.type === 'draft' &&
-            '初稿不要追求完美，先把想法倒出来。后续我们会帮你打磨。'}
-          {card.type === 'rewrite' &&
-            '改稿是让段子更精准的过程。每次改稿只解决一个问题。'}
-        </p>
-      </div>
     </div>
   );
 }

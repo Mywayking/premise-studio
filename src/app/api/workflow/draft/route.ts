@@ -1,174 +1,26 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { DEEPSEEK_API_KEY } from '@/lib/env';
-
-const DEEPSEEK_MODEL = 'deepseek-v4-pro';
-
-interface DraftRequest {
-  angle: string;
-  premise: string;
-  action?: string; // 'generate' | 'add_detail' | 'enhance_emotion'
-  context?: string; // previous draft content for enhancement
-}
-
-function buildDraftPrompt(
-  angle: string,
-  premise: string,
-  action: string = 'generate',
-  context?: string
-): string {
-  const baseInstruction = `你是单口喜剧演员。基于以下前提和角度，写一段60-90秒的单口段子（中文）。
-
-前提: ${premise}
-角度: ${angle}
-
-要求：
-- 真实、接地气、有细节
-- 有call-back潜力
-- 节奏感强，口语化
-- 不要凑字数，要精准
-`;
-
-  if (action === 'add_detail' && context) {
-    return `${baseInstruction}
-
-这是一段已有草稿，请增加更多真实细节和生活场景：
-
-已有草稿:
-${context}
-
-增加3-5个具体的细节描写（动作、表情、环境、语气），让段子更生动。`;
-  }
-
-  if (action === 'enhance_emotion' && context) {
-    return `${baseInstruction}
-
-这是一段已有草稿，请增强情绪张力：
-
-已有草稿:
-${context}
-
-增强情绪感染力，让笑点更有爆发力。注意保持段子的真实性。`;
-  }
-
-  return baseInstruction;
-}
+import { NextRequest } from 'next/server';
+import { createDeepSeekStream, sseResponse } from '@/lib/ai';
 
 export async function POST(req: NextRequest) {
-  try {
-    const body: DraftRequest = await req.json();
-    const { angle, premise, action = 'generate', context } = body;
+  const body = await req.json().catch(() => null);
+  const content = body?.content || '';
+  const action = body?.action || 'generate-draft';
+  const system = '你是单口喜剧演员。段子要像真人说话，有停顿感、有情绪、不像作文。';
 
-    if (!angle || !premise) {
-      return NextResponse.json(
-        { error: '角度和前提不能为空' },
-        { status: 400 }
-      );
-    }
+  let prompt: string;
+  const polishMap: Record<string, string> = {
+    'shorten': `缩短以下段子20-30%，保留所有punchline：\n\n${content}`,
+    'callback': `为以下段子添加callback——在末尾呼应前文细节：\n\n${content}`,
+    'colloquial': `把以下文本调整为更自然的说话方式，增加语气词：\n\n${content}`,
+    'enhance-punch': `增强以下段子每个punchline的力度：\n\n${content}`,
+    'generate-tag': `为以下punchline生成3个tag（追加短句用于叠加笑声），从荒诞、真实、个人化三个方向：\n\n${content}`,
+    'topper': `基于以下tag生成1-2个topper（tag之上的叠加，最炸的一句）：\n\n${content}`,
+  };
 
-    const apiKey = DEEPSEEK_API_KEY || process.env.DEEPSEEK_API_KEY;
-    const prompt = buildDraftPrompt(angle, premise, action, context);
-
-    // Streaming response using ReadableStream
-    const encoder = new TextEncoder();
-    
-    const stream = new ReadableStream({
-      async start(controller) {
-        try {
-          const response = await fetch(
-            'https://api.deepseek.com/v1/chat/completions',
-            {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${apiKey}`,
-              },
-              body: JSON.stringify({
-                model: DEEPSEEK_MODEL,
-                messages: [
-                  {
-                    role: 'system',
-                    content: '你是一个专业的单口喜剧演员，擅长写真实、有共鸣的段子。',
-                  },
-                  {
-                    role: 'user',
-                    content: prompt,
-                  },
-                ],
-                temperature: 0.85,
-                max_tokens: 800,
-                stream: true,
-              }),
-            }
-          );
-
-          if (!response.ok) {
-            const error = await response.text();
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({ error: 'AI 调用失败' })}\n\n`)
-            );
-            controller.close();
-            return;
-          }
-
-          const reader = response.body?.getReader();
-          if (!reader) {
-            controller.close();
-            return;
-          }
-
-          const decoder = new TextDecoder();
-          let buffer = '';
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                const data = line.slice(6);
-                if (data === '[DONE]') continue;
-                try {
-                  const parsed = JSON.parse(data);
-                  const content = parsed.choices?.[0]?.delta?.content || parsed.choices?.[0]?.delta?.reasoning_content || "";
-                  if (content) {
-                    controller.enqueue(
-                      encoder.encode(`data: ${JSON.stringify({ content })}\n\n`)
-                    );
-                  }
-                } catch {
-                  // Skip malformed JSON
-                }
-              }
-            }
-          }
-
-          try {
-            controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-          } catch {}
-          controller.close();
-        } catch (error) {
-          console.error('Streaming error:', error);
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ error: '流式输出错误' })}\n\n`)
-          );
-          controller.close();
-        }
-      },
-    });
-
-    return new Response(stream, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-      },
-    });
-  } catch (error) {
-    console.error('Draft route error:', error);
-    return NextResponse.json({ error: '服务器错误' }, { status: 500 });
+  if (polishMap[action]) {
+    prompt = polishMap[action];
+  } else {
+    prompt = `基于以下角度生成可表演草稿。像真人说话，有停顿感，标注punchline位置。以JSON返回：{"draft":{"text":"","punchlines":[],"estimatedDuration":60,"notes":""}}。\n\n角度：${content}`;
   }
+  return sseResponse(createDeepSeekStream(prompt, system));
 }

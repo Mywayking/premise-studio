@@ -1,156 +1,152 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { Card, CardType } from '@/types';
+import type { Card, CardType, CardTier, PerformanceRecord, LineAnnotationType } from '@/types';
 
 function generateId(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-}
-
-function findCardInTree(card: Card, id: string): Card | null {
-  if (card.id === id) return card;
-  for (const child of card.children) {
-    const found = findCardInTree(child, id);
-    if (found) return found;
-  }
-  return null;
-}
-
-function updateCardInTree(card: Card, id: string, updates: Partial<Card>): Card {
-  if (card.id === id) {
-    return { ...card, ...updates, updatedAt: Date.now() };
-  }
-  return {
-    ...card,
-    children: card.children.map((c) => updateCardInTree(c, id, updates)),
-    updatedAt: Date.now(),
-  };
-}
-
-function deleteCardFromTree(card: Card, id: string): Card {
-  return {
-    ...card,
-    children: card.children
-      .filter((c) => c.id !== id)
-      .map((c) => deleteCardFromTree(c, id)),
-    updatedAt: Date.now(),
-  };
-}
-
-function appendChildToCard(card: Card, parentId: string, newCard: Card): Card {
-  if (card.id === parentId) {
-    return {
-      ...card,
-      children: [...card.children, newCard],
-      updatedAt: Date.now(),
-    };
-  }
-  return {
-    ...card,
-    children: card.children.map((c) => appendChildToCard(c, parentId, newCard)),
-    updatedAt: Date.now(),
-  };
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
 }
 
 interface CardTreeState {
-  createCard(
-    sessionRootCard: Card,
-    parentId: string,
-    type: CardType,
-    title: string,
-    content?: string
-  ): { newCard: Card; updatedRoot: Card };
-
-  appendChild(sessionRootCard: Card, parentId: string, card: Card): Card;
-
-  branchNode(
-    sessionRootCard: Card,
-    sourceId: string,
-    newParentId: string
-  ): Card;
-
-  updateCard(
-    sessionRootCard: Card,
-    cardId: string,
-    updates: Partial<Card>
-  ): Card;
-
-  deleteCard(sessionRootCard: Card, cardId: string): Card;
-
-  findCard(card: Card, id: string): Card | null;
-
-  getCardTypeLabel(type: CardType): string;
-
-  getCardActions(type: CardType): string[];
+  cards: Record<string, Card>;
+  currentNodeId: string | null;
+  createCard: (type: CardType, parentId: string | null, content?: string) => Card;
+  appendChild: (parentId: string, card: Card) => void;
+  branchNode: (parentId: string, card: Card) => void;
+  updateCard: (cardId: string, updates: Partial<Card>) => void;
+  deleteCard: (cardId: string) => void;
+  setCurrentNode: (cardId: string) => void;
+  getCurrentNode: () => Card | null;
+  setTier: (cardId: string, tier: CardTier) => void;
+  addPerformance: (cardId: string, record: PerformanceRecord) => void;
+  setLineAnnotation: (cardId: string, lineIndex: number, type: LineAnnotationType | null) => void;
+  reorderSiblings: (cardId: string, newIndex: number) => void;
+  treeToJSON: () => Record<string, Card>;
+  restoreFromJSON: (cards: Record<string, Card>) => void;
+  getChildren: (cardId: string) => Card[];
 }
 
 export const useCardTreeStore = create<CardTreeState>()(
   persist(
     (set, get) => ({
-      createCard: (sessionRootCard, parentId, type, title, content = '') => {
-        const newCard: Card = {
-          id: generateId(),
-          type,
-          title,
-          content,
-          children: [],
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
+      cards: {},
+      currentNodeId: null,
+
+      createCard: (type, parentId, content) => {
+        const id = generateId();
+        const now = Date.now();
+        const card: Card = {
+          id, type, parentId, childrenIds: [],
+          content: content || '', performances: [],
+          createdAt: now, updatedAt: now, status: 'idle',
         };
-        const updatedRoot = appendChildToCard(
-          sessionRootCard,
-          parentId,
-          newCard
-        );
-        return { newCard, updatedRoot };
+        set((state) => ({ cards: { ...state.cards, [id]: card }, currentNodeId: id }));
+        return card;
       },
 
-      appendChild: (sessionRootCard, parentId, card) => {
-        return appendChildToCard(sessionRootCard, parentId, card);
+      appendChild: (parentId, card) =>
+        set((state) => {
+          const parent = state.cards[parentId];
+          if (!parent) return state;
+          const cards = {
+            ...state.cards,
+            [parentId]: { ...parent, childrenIds: [...parent.childrenIds, card.id], updatedAt: Date.now() },
+            [card.id]: card,
+          };
+          return { cards, currentNodeId: card.id };
+        }),
+
+      branchNode: (parentId, card) =>
+        set((state) => {
+          const parent = state.cards[parentId];
+          if (!parent) return state;
+          const cards = {
+            ...state.cards,
+            [parentId]: { ...parent, childrenIds: [...parent.childrenIds, card.id], updatedAt: Date.now() },
+            [card.id]: card,
+          };
+          return { cards, currentNodeId: card.id };
+        }),
+
+      updateCard: (cardId, updates) =>
+        set((state) => {
+          const card = state.cards[cardId];
+          if (!card) return state;
+          return { cards: { ...state.cards, [cardId]: { ...card, ...updates, updatedAt: Date.now() } } };
+        }),
+
+      deleteCard: (cardId) =>
+        set((state) => {
+          const card = state.cards[cardId];
+          if (!card || card.status === 'streaming') return state;
+          const cards = { ...state.cards };
+          const toDelete = new Set<string>();
+          (function collect(id: string) { toDelete.add(id); cards[id]?.childrenIds.forEach(collect); })(cardId);
+          if (card.parentId && cards[card.parentId]) {
+            cards[card.parentId] = {
+              ...cards[card.parentId],
+              childrenIds: cards[card.parentId].childrenIds.filter((cid) => cid !== cardId),
+            };
+          }
+          for (const id of toDelete) delete cards[id];
+          return { cards, currentNodeId: cardId === state.currentNodeId ? card.parentId : state.currentNodeId };
+        }),
+
+      setCurrentNode: (cardId) => set({ currentNodeId: cardId }),
+
+      getCurrentNode: () => {
+        const { cards, currentNodeId } = get();
+        return currentNodeId ? cards[currentNodeId] ?? null : null;
       },
 
-      branchNode: (sessionRootCard, sourceId, newParentId) => {
-        const sourceCard = findCardInTree(sessionRootCard, sourceId);
-        if (!sourceCard) return sessionRootCard;
-        const branchedCard: Card = {
-          ...sourceCard,
-          id: generateId(),
-          children: [],
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        };
-        return appendChildToCard(sessionRootCard, newParentId, branchedCard);
+      setTier: (cardId, tier) =>
+        set((state) => {
+          const card = state.cards[cardId];
+          if (!card || (card.type !== 'draft' && card.type !== 'rewrite')) return state;
+          return { cards: { ...state.cards, [cardId]: { ...card, tier, updatedAt: Date.now() } } };
+        }),
+
+      addPerformance: (cardId, record) =>
+        set((state) => {
+          const card = state.cards[cardId];
+          if (!card || (card.type !== 'draft' && card.type !== 'rewrite')) return state;
+          return { cards: { ...state.cards, [cardId]: { ...card, performances: [...card.performances, record], updatedAt: Date.now() } } };
+        }),
+
+      setLineAnnotation: (cardId, lineIndex, type) =>
+        set((state) => {
+          const card = state.cards[cardId];
+          if (!card || (card.type !== 'draft' && card.type !== 'rewrite')) return state;
+          const annotations = { ...(card.lineAnnotations || {}) };
+          if (type === null) delete annotations[lineIndex];
+          else annotations[lineIndex] = type;
+          return { cards: { ...state.cards, [cardId]: { ...card, lineAnnotations: annotations, updatedAt: Date.now() } } };
+        }),
+
+      reorderSiblings: (cardId, newIndex) =>
+        set((state) => {
+          const card = state.cards[cardId];
+          if (!card?.parentId) return state;
+          const parent = state.cards[card.parentId];
+          if (!parent) return state;
+          const siblings = [...parent.childrenIds];
+          const old = siblings.indexOf(cardId);
+          if (old === -1) return state;
+          siblings.splice(old, 1);
+          siblings.splice(newIndex, 0, cardId);
+          return { cards: { ...state.cards, [parent.id]: { ...parent, childrenIds: siblings, updatedAt: Date.now() } } };
+        }),
+
+      treeToJSON: () => get().cards,
+
+      restoreFromJSON: (cards) => {
+        const first = Object.keys(cards)[0] ?? null;
+        set({ cards, currentNodeId: first });
       },
 
-      updateCard: (sessionRootCard, cardId, updates) => {
-        return updateCardInTree(sessionRootCard, cardId, updates);
-      },
-
-      deleteCard: (sessionRootCard, cardId) => {
-        return deleteCardFromTree(sessionRootCard, cardId);
-      },
-
-      findCard: (card, id) => findCardInTree(card, id),
-
-      getCardTypeLabel: (type) => {
-        const labels: Record<CardType, string> = {
-          material: '素材',
-          premise: '前提',
-          angle: '角度',
-          draft: '草稿',
-          rewrite: '改稿',
-        };
-        return labels[type];
-      },
-
-      getCardActions: (type) => {
-        const actions: Record<CardType, string[]> = {
-          material: ['提炼前提', '提取情绪', '提取冲突'],
-          premise: ['找角度', '加强攻击性', '更荒诞', '更真实'],
-          angle: ['生成草稿', '增加细节', '增强情绪'],
-          draft: ['改稿', '缩短', 'callback', '更口语化'],
-          rewrite: ['再改稿', '比较版本', '分支创作'],
-        };
-        return actions[type];
+      getChildren: (cardId) => {
+        const { cards } = get();
+        const card = cards[cardId];
+        return card ? card.childrenIds.map((id) => cards[id]).filter(Boolean) : [];
       },
     }),
     { name: 'premise-studio-card-tree' }

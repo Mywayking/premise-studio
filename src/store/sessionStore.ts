@@ -1,42 +1,19 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { Session, Card } from '@/types';
+import type { Session } from '@/types';
 
 function generateId(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-}
-
-function createEmptySession(): Session {
-  const rootId = generateId();
-  return {
-    id: generateId(),
-    name: '新会话',
-    rootCard: {
-      id: rootId,
-      type: 'material',
-      title: '素材',
-      content: '',
-      children: [],
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    },
-    activeCardId: rootId,
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
-  };
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
 }
 
 interface SessionState {
   sessions: Session[];
   currentSessionId: string | null;
-  
-  // Actions
-  createSession: () => Session;
+  createSession: (name?: string) => Session;
   updateSession: (id: string, updates: Partial<Session>) => void;
   deleteSession: (id: string) => void;
-  restoreSession: (id: string) => void;
-  getCurrentSession: () => Session | null;
   setCurrentSession: (id: string) => void;
+  getCurrentSession: () => Session | undefined;
 }
 
 export const useSessionStore = create<SessionState>()(
@@ -45,49 +22,45 @@ export const useSessionStore = create<SessionState>()(
       sessions: [],
       currentSessionId: null,
 
-      createSession: () => {
-        const newSession = createEmptySession();
+      createSession: (name?: string) => {
+        const id = generateId();
+        const rootCardId = generateId();
+        const session: Session = {
+          id,
+          name: name || `新创作 ${new Date().toLocaleDateString('zh-CN')}`,
+          rootCardId,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
         set((state) => ({
-          sessions: [...state.sessions, newSession],
-          currentSessionId: newSession.id,
+          sessions: [...state.sessions, session],
+          currentSessionId: id,
         }));
-        return newSession;
+        return session;
       },
 
-      updateSession: (id, updates) => {
+      updateSession: (id, updates) =>
         set((state) => ({
           sessions: state.sessions.map((s) =>
             s.id === id ? { ...s, ...updates, updatedAt: Date.now() } : s
           ),
-        }));
-      },
+        })),
 
-      deleteSession: (id) => {
+      deleteSession: (id) =>
         set((state) => {
           const sessions = state.sessions.filter((s) => s.id !== id);
           const currentSessionId =
-            state.currentSessionId === id
-              ? sessions[0]?.id ?? null
-              : state.currentSessionId;
+            state.currentSessionId === id ? sessions[0]?.id ?? null : state.currentSessionId;
           return { sessions, currentSessionId };
-        });
-      },
+        }),
 
-      restoreSession: (id) => {
-        set({ currentSessionId: id });
-      },
+      setCurrentSession: (id) => set({ currentSessionId: id }),
 
       getCurrentSession: () => {
         const { sessions, currentSessionId } = get();
-        return sessions.find((s) => s.id === currentSessionId) ?? null;
-      },
-
-      setCurrentSession: (id) => {
-        set({ currentSessionId: id });
+        return sessions.find((s) => s.id === currentSessionId);
       },
     }),
-    {
-      name: 'premise-studio-sessions',
-    }
+    { name: 'premise-studio-sessions' }
   )
 );
