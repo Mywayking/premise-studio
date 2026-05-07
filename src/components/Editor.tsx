@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useCardTreeStore } from '@/store/cardTreeStore';
 import { useStreamingStore } from '@/store/streamingStore';
 import type { PerformanceResult, LineAnnotationType } from '@/types';
@@ -7,6 +7,10 @@ import type { PerformanceResult, LineAnnotationType } from '@/types';
 const LINE_LABELS: Record<LineAnnotationType, string> = {
   opener: '开场', setup: '铺垫', punchline: '炸点', tag: 'Tag', topper: 'Topper', 'act-out': '表演', transition: '过渡', closer: '收尾',
 };
+
+function formatTime(ts: number) {
+  return new Date(ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+}
 
 export function Editor() {
   const currentNode = useCardTreeStore((s) => s.getCurrentNode());
@@ -25,12 +29,55 @@ export function Editor() {
   const [perfVenue, setPerfVenue] = useState('');
   const [perfResult, setPerfResult] = useState<PerformanceResult>('killed');
   const [perfNotes, setPerfNotes] = useState('');
+  const [lastSaved, setLastSaved] = useState<number | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const cardIdRef = useRef(currentNode?.id);
 
   const displayContent = currentNode
     ? (streamingState === 'streaming' ? (currentNode.content || '') + streamingBuffer : currentNode.content || '')
     : '';
 
-  useEffect(() => { if (currentNode) { setEditContent(displayContent); } }, [currentNode?.id]);
+  const doSave = useCallback(() => {
+    const id = cardIdRef.current;
+    if (!id) return;
+    const card = useCardTreeStore.getState().cards[id];
+    if (!card || streamingState === 'streaming') return;
+    if (editContent !== card.content) {
+      updateCard(id, { content: editContent });
+      const now = Date.now();
+      setLastSaved(now);
+      setDirty(false);
+    }
+  }, [editContent, updateCard, streamingState]);
+
+  // Initialize content when switching cards
+  useEffect(() => {
+    cardIdRef.current = currentNode?.id;
+    if (currentNode) {
+      setEditContent(displayContent);
+      setDirty(false);
+      setLastSaved(null);
+    }
+  }, [currentNode?.id]);
+
+  // Auto-save after 2s idle
+  useEffect(() => {
+    if (!dirty || streamingState === 'streaming') return;
+    const timer = setTimeout(doSave, 2000);
+    return () => clearTimeout(timer);
+  }, [editContent, dirty, doSave, streamingState]);
+
+  // Cmd+S / Ctrl+S handler
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault();
+        doSave();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [doSave]);
 
   if (!currentNode) {
     return <div className="flex items-center justify-center h-full text-ink-muted text-sm">选择一个 card 开始创作</div>;
@@ -53,7 +100,13 @@ export function Editor() {
           {isDraftOrRewrite && (
             <button onClick={() => setAnnotationMode(!annotationMode)} className={`text-xs px-2 py-1 rounded transition-colors ${annotationMode ? 'bg-accent text-white' : 'text-ink-muted hover:text-ink'}`}>行标注</button>
           )}
-          <button onClick={() => updateCard(currentNode.id, { content: editContent })} className="text-xs px-2 py-1 text-ink-muted hover:text-ink rounded transition-colors">保存</button>
+          {dirty ? (
+            <span className="text-xs text-ink-muted animate-pulse">编辑中...</span>
+          ) : lastSaved ? (
+            <span className="text-xs text-ink-muted">已自动保存 {formatTime(lastSaved)}</span>
+          ) : (
+            <span className="text-xs text-disabled">未修改</span>
+          )}
         </div>
       </div>
 
@@ -80,7 +133,7 @@ export function Editor() {
         </div>
       ) : (
         <textarea className="w-full min-h-[300px] resize-y bg-transparent text-ink leading-relaxed text-base outline-none rounded-lg p-3 border border-transparent hover:border-paper-dark focus:border-accent/30 transition-colors"
-          value={editContent} onChange={(e) => setEditContent(e.target.value)}
+          value={editContent} onChange={(e) => { setEditContent(e.target.value); setDirty(true); }}
           placeholder="开始写..." />
       )}
 

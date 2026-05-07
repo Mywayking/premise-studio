@@ -1,4 +1,5 @@
 'use client';
+import { useState, useEffect } from 'react';
 import { useCardTreeStore } from '@/store/cardTreeStore';
 import { useSessionStore } from '@/store/sessionStore';
 import { useStreamingStore } from '@/store/streamingStore';
@@ -40,6 +41,15 @@ export function ActionPanel() {
   const streamingState = useStreamingStore((s) => s.state);
   const { triggerAction, cancel } = useStreaming();
 
+  const [activeAction, setActiveAction] = useState<string | null>(null);
+
+  // Clear active action when streaming ends
+  useEffect(() => {
+    if (streamingState !== 'streaming') {
+      setActiveAction(null);
+    }
+  }, [streamingState]);
+
   if (!currentNode) return <p className="text-sm text-ink-muted py-4">在左侧点击一个 card 查看可用的 AI Action</p>;
 
   const actions = ACTIONS[currentNode.type] || [];
@@ -52,12 +62,14 @@ export function ActionPanel() {
       {actions.map((action) => {
         const needsLine = action.key === 'generate-tag' || action.key === 'topper';
         const disabled = isStreaming || (needsLine && !hasLineAnnotations);
+        const isActive = isStreaming && action.key === activeAction;
         return (
-          <button key={action.key} onClick={() => { const s = useSessionStore.getState().getCurrentSession(); if (s && !disabled) triggerAction(action.key, s.id); }}
+          <button key={action.key} onClick={() => { const s = useSessionStore.getState().getCurrentSession(); if (s && !disabled) { setActiveAction(action.key); triggerAction(action.key, s.id); } }}
             disabled={disabled}
-            className={`w-full text-left px-4 py-2.5 rounded-lg text-sm transition-colors ${action.primary ? 'bg-accent text-white hover:opacity-90 font-medium' : 'bg-white border border-paper-dark text-ink-secondary hover:bg-hover-bg'} disabled:opacity-40 disabled:cursor-not-allowed`}
+            className={`w-full text-left px-4 py-2.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${action.primary ? 'bg-accent text-white hover:opacity-90 font-medium' : 'bg-white border border-paper-dark text-ink-secondary hover:bg-hover-bg'} disabled:opacity-40 disabled:cursor-not-allowed`}
             title={needsLine && !hasLineAnnotations ? '需要先在编辑器中标记行类型' : undefined}>
-            {action.label}
+            {isActive && <span className="w-3.5 h-3.5 rounded-full border-2 border-white border-t-transparent animate-spin flex-shrink-0" />}
+            <span>{isActive ? '生成中...' : action.label}</span>
             {needsLine && !hasLineAnnotations && <div className="text-[10px] opacity-60 mt-0.5">需要行标注</div>}
           </button>
         );

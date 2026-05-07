@@ -28,6 +28,7 @@ export default function SessionPage() {
   const [mounted, setMounted] = useState(false);
   const sessions = useSessionStore((s) => s.sessions);
   const setCurrentSession = useSessionStore((s) => s.setCurrentSession);
+  const updateSession = useSessionStore((s) => s.updateSession);
   const session = sessions.find((s) => s.id === id);
   const cards = useCardTreeStore((s) => s.cards);
   const currentNode = useCardTreeStore((s) => s.getCurrentNode());
@@ -41,6 +42,15 @@ export default function SessionPage() {
   const toggleLeft = useUIStore((s) => s.toggleLeftDrawer);
   const toggleRight = useUIStore((s) => s.toggleRightDrawer);
   const setBp = useUIStore((s) => s.setBreakpoint);
+
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState('');
+
+  const startRename = () => { if (session) { setNameInput(session.name); setEditingName(true); } };
+  const commitRename = () => {
+    if (id && nameInput.trim()) updateSession(id, { name: nameInput.trim() });
+    setEditingName(false);
+  };
 
   useEffect(() => { setMounted(true); const r = () => { const w = window.innerWidth; setBp(w < 768, w >= 768 && w < 1024); }; r(); window.addEventListener('resize', r); return () => window.removeEventListener('resize', r); }, [setBp]);
   useEffect(() => { if (id) setCurrentSession(id); }, [id, setCurrentSession]);
@@ -68,7 +78,15 @@ export default function SessionPage() {
 
       <main className="flex-1 flex flex-col min-w-0">
         <header className="flex items-center justify-between px-6 py-3 border-b border-paper-dark bg-paper-light/50 flex-shrink-0">
-          <h1 className="text-sm font-medium text-ink truncate">{session.name}</h1>
+          {editingName ? (
+            <input className="text-sm font-medium text-ink bg-white border border-accent rounded px-2 py-0.5 outline-none flex-shrink-0 min-w-0"
+              value={nameInput} onChange={(e) => setNameInput(e.target.value)}
+              onBlur={commitRename}
+              onKeyDown={(e) => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') setEditingName(false); }}
+              autoFocus />
+          ) : (
+            <h1 className="text-sm font-medium text-ink truncate cursor-default" onDoubleClick={startRename}>{session.name}</h1>
+          )}
           {!isMobile && <div className="flex items-center gap-1">
             <button onClick={useUIStore.getState().toggleLeftPanel} className="px-2 py-1 text-xs text-ink-muted hover:text-ink rounded transition-colors">{leftOpen ? '隐藏树' : '显示树'}</button>
             <button onClick={useUIStore.getState().toggleRightPanel} className="px-2 py-1 text-xs text-ink-muted hover:text-ink rounded transition-colors">{rightOpen ? '隐藏面板' : '显示面板'}</button>
