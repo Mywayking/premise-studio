@@ -89,8 +89,6 @@ export function useStreaming() {
   const abort = useStreamingStore((s) => s.abort);
 
   const updateCard = useCardTreeStore((s) => s.updateCard);
-  const createCard = useCardTreeStore((s) => s.createCard);
-  const appendChild = useCardTreeStore((s) => s.appendChild);
   const currentId = useCardTreeStore((s) => s.currentNodeId);
   const cards = useCardTreeStore((s) => s.cards);
 
@@ -188,7 +186,7 @@ export function useStreaming() {
       const buffer = useStreamingStore.getState().buffer;
       updateCard(currentId, { content: original + buffer, status: 'error' });
     }
-  }, [currentId, cards, start, append, done, to, err, abort, updateCard, createCard, appendChild]);
+  }, [currentId, cards, start, append, done, to, err, abort, updateCard]);
 
   const cancel = useStreamingStore((s) => s.abort);
   const streamingState = useStreamingStore((s) => s.state);
