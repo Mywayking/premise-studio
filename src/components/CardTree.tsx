@@ -25,6 +25,7 @@ function CardMenu({ card, onClose }: { card: Card; onClose: () => void }) {
 
   useEffect(() => {
     if (mode === 'rename') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setNameInput(card.content.slice(0, 60));
       setTimeout(() => inputRef.current?.focus(), 0);
     }

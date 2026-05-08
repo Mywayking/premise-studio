@@ -52,10 +52,11 @@ export function Editor() {
     }
   }, [editContent, updateCard, streamingState]);
 
-  // Initialize content when switching cards
+  // Sync local edit state when switching cards
   useEffect(() => {
     cardIdRef.current = currentNode?.id;
     if (currentNode) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setEditContent(displayContent);
       setDirty(false);
       setLastSaved(null);

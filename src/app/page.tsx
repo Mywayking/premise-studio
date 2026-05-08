@@ -182,6 +182,8 @@ function SessionList() {
 
 export default function Home() {
   const [mounted, setMounted] = useState(false);
+  // One-time mount marker for client-side rendering
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setMounted(true); }, []);
   if (!mounted) return <div className="flex items-center justify-center h-full bg-paper"><div className="w-6 h-6 rounded-full border-2 border-accent border-t-transparent animate-spin" /></div>;
 

@@ -52,6 +52,8 @@ export default function SessionPage() {
     setEditingName(false);
   };
 
+  // Mount marker + responsive breakpoint listener
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setMounted(true); const r = () => { const w = window.innerWidth; setBp(w < 768, w >= 768 && w < 1024); }; r(); window.addEventListener('resize', r); return () => window.removeEventListener('resize', r); }, [setBp]);
   useEffect(() => { if (id) setCurrentSession(id); }, [id, setCurrentSession]);
   useEffect(() => { if (!mounted || !id) return; const has = Object.values(cards).some((c) => c.type === 'material' && c.parentId === null); if (!has) { const c = createCard('material', null, ''); setCurrentNode(c.id); } }, [mounted]);

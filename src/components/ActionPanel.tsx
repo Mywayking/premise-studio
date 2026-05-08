@@ -45,6 +45,7 @@ export function ActionPanel() {
   // Clear active action when streaming ends
   useEffect(() => {
     if (streamingState !== 'streaming') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveAction(null);
     }
   }, [streamingState]);
