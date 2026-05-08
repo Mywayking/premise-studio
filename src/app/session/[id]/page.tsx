@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useSessionStore } from '@/store/sessionStore';
 import { useCardTreeStore } from '@/store/cardTreeStore';
@@ -40,7 +41,6 @@ export default function SessionPage() {
   const leftDrawer = useUIStore((s) => s.leftDrawerOpen);
   const rightDrawer = useUIStore((s) => s.rightDrawerOpen);
   const toggleLeft = useUIStore((s) => s.toggleLeftDrawer);
-  const toggleRight = useUIStore((s) => s.toggleRightDrawer);
   const setBp = useUIStore((s) => s.setBreakpoint);
 
   const [editingName, setEditingName] = useState(false);
@@ -58,7 +58,7 @@ export default function SessionPage() {
   useEffect(() => { if (!mounted) return; const cn = useCardTreeStore.getState().getCurrentNode(); if (!cn) { const r = Object.values(useCardTreeStore.getState().cards).find((c) => c.parentId === null); if (r) setCurrentNode(r.id); } }, [mounted, currentNode]);
 
   if (!mounted) return <div className="flex items-center justify-center h-full bg-paper"><div className="w-6 h-6 rounded-full border-2 border-accent border-t-transparent animate-spin" /></div>;
-  if (!session) return <div className="flex items-center justify-center h-full bg-paper"><div className="text-center space-y-3"><p className="text-ink-muted">Session 不存在</p><a href="/" className="text-sm text-accent hover:underline">返回首页</a></div></div>;
+  if (!session) return <div className="flex items-center justify-center h-full bg-paper"><div className="text-center space-y-3"><p className="text-ink-muted">Session 不存在</p><Link href="/" className="text-sm text-accent hover:underline">返回首页</Link></div></div>;
 
   return (
     <div className="flex h-full bg-paper">
@@ -68,7 +68,7 @@ export default function SessionPage() {
       <aside className={`${isMobile ? `fixed left-0 top-0 bottom-0 z-40 w-72 bg-paper-light shadow-lg transition-transform duration-200 ${leftDrawer ? 'translate-x-0' : '-translate-x-full'}` : `w-72 flex-shrink-0 border-r border-paper-dark bg-paper-light transition-all duration-200 ${leftOpen ? '' : 'hidden'}`} overflow-y-auto`}>
         <div className="p-4">
           <div className="flex items-center justify-between mb-3">
-            <a href="/" className="text-sm font-medium text-ink hover:text-accent transition-colors">Premise Studio</a>
+            <Link href="/" className="text-sm font-medium text-ink hover:text-accent transition-colors">Premise Studio</Link>
             {isMobile && <button onClick={toggleLeft} className="text-ink-muted hover:text-ink p-1"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M4 4l8 8M12 4l-8 8" /></svg></button>}
           </div>
           <h2 className="text-xs font-medium text-ink-muted uppercase tracking-wide mb-3">创作树</h2>

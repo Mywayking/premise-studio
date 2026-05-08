@@ -37,7 +37,6 @@ const ACTIONS: Record<string, { key: string; label: string; primary?: boolean }[
 
 export function ActionPanel() {
   const currentNode = useCardTreeStore((s) => s.getCurrentNode());
-  const session = useSessionStore((s) => s.getCurrentSession());
   const streamingState = useStreamingStore((s) => s.state);
   const { triggerAction, cancel } = useStreaming();
 

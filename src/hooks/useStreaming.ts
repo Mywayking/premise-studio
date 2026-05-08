@@ -23,7 +23,7 @@ const ENDPOINT_MAP: Record<string, string> = {
 interface PremiseItem { statement: string; attitude: string; conflict: string; potential: string; }
 interface AngleItem { type: string; description: string; opening: string; direction: string; }
 
-function getChildType(parentType: string, actionKey: string): CardType {
+function getChildType(parentType: string, _actionKey: string): CardType {
   if (parentType === 'material') return 'premise';
   if (parentType === 'premise') return 'angle';
   if (parentType === 'angle') return 'draft';
