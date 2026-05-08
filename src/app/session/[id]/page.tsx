@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { useSessionStore } from '@/store/sessionStore';
 import { useCardTreeStore } from '@/store/cardTreeStore';
 import { useUIStore } from '@/store/uiStore';
+import { useStreaming } from '@/hooks/useStreaming';
 import { CardTree } from '@/components/CardTree';
 import { Editor } from '@/components/Editor';
 import { ActionPanel } from '@/components/ActionPanel';
@@ -42,6 +43,7 @@ export default function SessionPage() {
   const rightDrawer = useUIStore((s) => s.rightDrawerOpen);
   const toggleLeft = useUIStore((s) => s.toggleLeftDrawer);
   const setBp = useUIStore((s) => s.setBreakpoint);
+  const { triggerAction } = useStreaming();
 
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState('');
@@ -58,6 +60,24 @@ export default function SessionPage() {
   useEffect(() => { if (id) setCurrentSession(id); }, [id, setCurrentSession]);
   useEffect(() => { if (!mounted || !id) return; const has = Object.values(cards).some((c) => c.type === 'material' && c.parentId === null); if (!has) { const c = createCard('material', null, ''); setCurrentNode(c.id); } }, [mounted]);
   useEffect(() => { if (!mounted) return; const cn = useCardTreeStore.getState().getCurrentNode(); if (!cn) { const r = Object.values(useCardTreeStore.getState().cards).find((c) => c.parentId === null); if (r) setCurrentNode(r.id); } }, [mounted, currentNode]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        const cn = useCardTreeStore.getState().getCurrentNode();
+        if (!cn || !id) return;
+        const primaryMap: Record<string, string> = {
+          material: 'extract-premises', premise: 'find-angles',
+          angle: 'generate-draft', draft: 'rewrite', rewrite: 're-rewrite',
+        };
+        const actionKey = primaryMap[cn.type];
+        if (actionKey) triggerAction(actionKey, id);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [id, triggerAction]);
 
   if (!mounted) return <div className="flex items-center justify-center h-full bg-paper"><div className="w-6 h-6 rounded-full border-2 border-accent border-t-transparent animate-spin" /></div>;
   if (!session) return <div className="flex items-center justify-center h-full bg-paper"><div className="text-center space-y-3"><p className="text-ink-muted">Session 不存在</p><Link href="/" className="text-sm text-accent hover:underline">返回首页</Link></div></div>;

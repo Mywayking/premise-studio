@@ -69,7 +69,8 @@ export function ActionPanel() {
             className={`w-full text-left px-4 py-2.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${action.primary ? 'bg-accent text-white hover:opacity-90 font-medium' : 'bg-white border border-paper-dark text-ink-secondary hover:bg-hover-bg'} disabled:opacity-40 disabled:cursor-not-allowed`}
             title={needsLine && !hasLineAnnotations ? '需要先在编辑器中标记行类型' : undefined}>
             {isActive && <span className="w-3.5 h-3.5 rounded-full border-2 border-white border-t-transparent animate-spin flex-shrink-0" />}
-            <span>{isActive ? '生成中...' : action.label}</span>
+            <span className="flex-1">{isActive ? '生成中...' : action.label}</span>
+            {action.primary && !isActive && <kbd className="text-[10px] opacity-60 ml-auto">⌘↵</kbd>}
             {needsLine && !hasLineAnnotations && <div className="text-[10px] opacity-60 mt-0.5">需要行标注</div>}
           </button>
         );
