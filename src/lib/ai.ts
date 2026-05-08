@@ -5,7 +5,7 @@ export function createDeepSeekStream(prompt: string, systemPrompt?: string): Rea
   return new ReadableStream({
     async start(ctrl) {
       try {
-        const messages: any[] = [];
+        const messages: { role: string; content: string }[] = [];
         if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
         messages.push({ role: 'user', content: prompt });
 
@@ -40,8 +40,12 @@ export function createDeepSeekStream(prompt: string, systemPrompt?: string): Rea
         }
         ctrl.enqueue(encoder.encode('data: {"type":"done"}\n\n'));
         ctrl.close();
-      } catch (err: any) {
-        ctrl.enqueue(encoder.encode(`data: {"type":"error","code":"UNAVAILABLE","message":"${err.message}"}\n\n`));
+      } catch (err: unknown) {
+        const message = err instanceof Error
+          ? err.message.replace(/[\r\n]+/g, ' ').slice(0, 200)
+          : 'Unknown error';
+        const safe = JSON.stringify({ type: 'error', code: 'UNAVAILABLE', message });
+        ctrl.enqueue(encoder.encode(`data: ${safe}\n\n`));
         ctrl.close();
       }
     },

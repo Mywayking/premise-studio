@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useCardTreeStore } from '@/store/cardTreeStore';
 import { useStreamingStore } from '@/store/streamingStore';
+import { useUIStore } from '@/store/uiStore';
 import type { PerformanceResult, LineAnnotationType } from '@/types';
 
 const LINE_LABELS: Record<LineAnnotationType, string> = {
@@ -21,6 +22,7 @@ export function Editor() {
   const streamingBuffer = useStreamingStore((s) => s.buffer);
   const streamingError = useStreamingStore((s) => s.errorMessage);
   const reset = useStreamingStore((s) => s.reset);
+  const isMobile = useUIStore((s) => s.isMobile);
 
   const [editContent, setEditContent] = useState('');
   const [annotationMode, setAnnotationMode] = useState(false);
@@ -124,7 +126,7 @@ export function Editor() {
               <span className="text-xs text-ink-muted w-6 text-right flex-shrink-0 select-none pt-0.5">{i + 1}</span>
               <span className="flex-1 min-w-0 whitespace-pre-wrap">{line || ' '}</span>
               <select value={annotations[i] || ''} onChange={(e) => setLineAnnotation(currentNode.id, i, e.target.value ? e.target.value as LineAnnotationType : null)}
-                className="text-[10px] bg-transparent border border-paper-dark rounded px-1 py-0.5 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity flex-shrink-0">
+                className={`bg-transparent border border-paper-dark rounded px-1 py-0.5 flex-shrink-0 transition-opacity ${isMobile ? 'text-xs opacity-100' : 'text-[10px] opacity-0 group-hover:opacity-100 focus:opacity-100'}`}>
                 <option value="">-</option>
                 {Object.entries(LINE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </select>

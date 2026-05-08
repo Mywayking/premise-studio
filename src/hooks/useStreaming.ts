@@ -20,7 +20,10 @@ const ENDPOINT_MAP: Record<string, string> = {
   'performance-script': '/api/workflow/rewrite', 'compare': '/api/workflow/rewrite',
 };
 
-function getChildType(parentType: string, action: string): CardType {
+interface PremiseItem { statement: string; attitude: string; conflict: string; potential: string; }
+interface AngleItem { type: string; description: string; opening: string; direction: string; }
+
+function getChildType(parentType: string, actionKey: string): CardType {
   if (parentType === 'material') return 'premise';
   if (parentType === 'premise') return 'angle';
   if (parentType === 'angle') return 'draft';
@@ -37,6 +40,46 @@ function resolveEndpoint(cardType: string, actionKey: string): string {
   return ENDPOINT_MAP[actionKey] || `/api/workflow/${cardType}`;
 }
 
+function formatPremiseContent(p: PremiseItem): string {
+  return `前提：${p.statement || ''}\n态度：${p.attitude || ''}\n冲突：${p.conflict || ''}\n潜力：${p.potential || ''}`;
+}
+
+function formatAngleContent(a: AngleItem): string {
+  return `角度类型：${a.type || ''}\n描述：${a.description || ''}\n开场：${a.opening || ''}\n方向：${a.direction || ''}`;
+}
+
+interface ParsedPremiseResponse { premises?: PremiseItem[]; }
+interface ParsedAngleResponse { angles?: AngleItem[]; }
+
+function handleStreamResult(
+  childType: CardType, parentId: string, full: string,
+  createCard: ReturnType<typeof useCardTreeStore.getState>['createCard'],
+  appendChildFn: ReturnType<typeof useCardTreeStore.getState>['appendChild'],
+  branchNode: ReturnType<typeof useCardTreeStore.getState>['branchNode'],
+) {
+  if (childType === 'premise' || childType === 'angle') {
+    try {
+      const parsed = JSON.parse(full);
+      if (childType === 'premise' && Array.isArray(parsed.premises) && parsed.premises.length > 0) {
+        (parsed as ParsedPremiseResponse).premises!.forEach((p, i) => {
+          const card = createCard(childType, parentId, formatPremiseContent(p));
+          if (i === 0) appendChildFn(parentId, card); else branchNode(parentId, card);
+        });
+        return;
+      }
+      if (childType === 'angle' && Array.isArray(parsed.angles) && parsed.angles.length > 0) {
+        (parsed as ParsedAngleResponse).angles!.forEach((a, i) => {
+          const card = createCard(childType, parentId, formatAngleContent(a));
+          if (i === 0) appendChildFn(parentId, card); else branchNode(parentId, card);
+        });
+        return;
+      }
+    } catch { /* JSON parse failed, fall through to raw text */ }
+  }
+  const child = createCard(childType, parentId, full);
+  appendChildFn(parentId, child);
+}
+
 export function useStreaming() {
   const start = useStreamingStore((s) => s.startStreaming);
   const append = useStreamingStore((s) => s.appendToken);
@@ -44,7 +87,6 @@ export function useStreaming() {
   const to = useStreamingStore((s) => s.timeout);
   const err = useStreamingStore((s) => s.setError);
   const abort = useStreamingStore((s) => s.abort);
-  const st = useStreamingStore((s) => s.state);
 
   const updateCard = useCardTreeStore((s) => s.updateCard);
   const createCard = useCardTreeStore((s) => s.createCard);
@@ -53,7 +95,7 @@ export function useStreaming() {
   const cards = useCardTreeStore((s) => s.cards);
 
   const triggerAction = useCallback(async (actionKey: string, sessionId: string) => {
-    if (st === 'streaming' || !currentId) return;
+    if (useStreamingStore.getState().state === 'streaming' || !currentId) return;
     const currentCard = cards[currentId];
     if (!currentCard) return;
 
@@ -62,7 +104,17 @@ export function useStreaming() {
     const ctrl = start();
     updateCard(currentId, { status: 'streaming' });
 
-    const tid = setTimeout(() => { to(); updateCard(currentId, { content: original + useStreamingStore.getState().buffer, status: 'error' }); }, 60000);
+    const tid = setTimeout(() => {
+      to();
+      const buffer = useStreamingStore.getState().buffer;
+      if (buffer) {
+        const childType = getChildType(currentCard.type, actionKey);
+        const st = useCardTreeStore.getState();
+        const child = st.createCard(childType, currentId, buffer);
+        st.appendChild(currentId, child);
+      }
+      updateCard(currentId, { status: 'error' });
+    }, 60000);
 
     try {
       const res = await fetch(endpoint, {
@@ -70,38 +122,75 @@ export function useStreaming() {
         body: JSON.stringify({ cardId: currentId, sessionId, action: actionKey, content: original }),
         signal: ctrl.signal,
       });
-      if (!res.ok) { err(res.status >= 500 ? 'UNAVAILABLE' : 'INVALID', 'AI 服务异常'); clearTimeout(tid); updateCard(currentId, { status: 'error' }); return; }
+      if (!res.ok) {
+        err(res.status >= 500 ? 'UNAVAILABLE' : 'INVALID', 'AI 服务异常');
+        clearTimeout(tid);
+        updateCard(currentId, { status: 'error' });
+        return;
+      }
       const reader = res.body?.getReader();
-      if (!reader) { err('INVALID', '无法读取响应'); clearTimeout(tid); updateCard(currentId, { status: 'error' }); return; }
-      const decoder = new TextDecoder(); let full = '';
+      if (!reader) {
+        err('INVALID', '无法读取响应');
+        clearTimeout(tid);
+        updateCard(currentId, { status: 'error' });
+        return;
+      }
+      const decoder = new TextDecoder();
+      let full = '';
+      let lineBuf = '';
       while (true) {
         const { done: d, value } = await reader.read();
         if (d) break;
-        const chunk = decoder.decode(value, { stream: true });
-        for (const line of chunk.split('\n')) {
+        lineBuf += decoder.decode(value, { stream: true });
+        const lines = lineBuf.split('\n');
+        lineBuf = lines.pop() || '';
+        for (const line of lines) {
           if (!line.startsWith('data: ')) continue;
           try {
             const p = JSON.parse(line.slice(6));
-            if (p.type === 'token' && p.content) { full += p.content; append(p.content); }
-            else if (p.type === 'done') {
-              clearTimeout(tid); done();
-              const child = createCard(getChildType(currentCard.type, actionKey), currentId, full);
-              appendChild(currentId, child);
+            if (p.type === 'token' && p.content) {
+              full += p.content;
+              append(p.content);
+            } else if (p.type === 'done') {
+              clearTimeout(tid);
+              done();
+              const st = useCardTreeStore.getState();
+              handleStreamResult(
+                getChildType(currentCard.type, actionKey), currentId, full,
+                st.createCard, st.appendChild, st.branchNode,
+              );
               return;
-            } else if (p.type === 'error') { clearTimeout(tid); err(p.code || 'INVALID', p.message || '未知错误'); updateCard(currentId, { content: original, status: 'error' }); return; }
-          } catch {}
+            } else if (p.type === 'error') {
+              clearTimeout(tid);
+              err(p.code || 'INVALID', p.message || '未知错误');
+              updateCard(currentId, { content: original, status: 'error' });
+              return;
+            }
+          } catch { /* skip malformed SSE lines */ }
         }
       }
-      clearTimeout(tid); done();
-      const child = createCard(getChildType(currentCard.type, actionKey), currentId, full);
-      appendChild(currentId, child);
-    } catch (e: any) {
       clearTimeout(tid);
-      if (e.name === 'AbortError') { abort(); updateCard(currentId, { content: original + useStreamingStore.getState().buffer, status: 'idle' }); return; }
+      done();
+      const st = useCardTreeStore.getState();
+      handleStreamResult(
+        getChildType(currentCard.type, actionKey), currentId, full,
+        st.createCard, st.appendChild, st.branchNode,
+      );
+    } catch (e: unknown) {
+      clearTimeout(tid);
+      if (e instanceof DOMException && e.name === 'AbortError') {
+        abort();
+        const buffer = useStreamingStore.getState().buffer;
+        updateCard(currentId, { content: original + buffer, status: 'idle' });
+        return;
+      }
       err('UNAVAILABLE', '网络连接中断');
-      updateCard(currentId, { content: original + useStreamingStore.getState().buffer, status: 'error' });
+      const buffer = useStreamingStore.getState().buffer;
+      updateCard(currentId, { content: original + buffer, status: 'error' });
     }
-  }, [st, currentId, cards, start, append, done, to, err, abort, updateCard, createCard, appendChild]);
+  }, [currentId, cards, start, append, done, to, err, abort, updateCard, createCard, appendChild]);
 
-  return { triggerAction, cancel: abort, streamingState: st };
+  const cancel = useStreamingStore((s) => s.abort);
+  const streamingState = useStreamingStore((s) => s.state);
+  return { triggerAction, cancel, streamingState };
 }
